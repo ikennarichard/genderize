@@ -11,7 +11,7 @@ A fast, lightweight Go API that extends the [Genderize.io](https://genderize.io)
 
 ### Classify Name
 
-```http
+```bash
 GET /api/classify?name={name}
 ```
 
@@ -28,8 +28,30 @@ GET /api/classify?name={name}
     "is_confident": true,
     "processed_at": "2026-04-10T17:39:00Z"
   }
-}
+
 ```
 
+## Local Development
+
+### Clone repository
+
+```bash
 git clone <your-repo-url>
-cd gender-classifier
+cd genderize-classifier
+```
+
+### Run the server
+
+```bash
+go run .
+```
+
+### Test locally
+
+```bash
+curl "http://localhost:8080/api/classify?name=richard
+```
+
+## Deployment
+
+This project is configured for easy deployment on Vercel.
