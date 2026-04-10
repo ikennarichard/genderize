@@ -128,12 +128,3 @@ func buildProcessedData(apiResp *GenderizeResponse) Data {
         ProcessedAt: time.Now().UTC().Format(time.RFC3339),
     }
 }
-
-func Handler(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet && r.URL.Path == "/api/classify" {
-		Classify(w, r)
-		return
-	}
-
-	http.NotFound(w, r)
-}
