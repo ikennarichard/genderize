@@ -55,3 +55,6 @@ curl "http://localhost:8080/api/classify?name=richard
 ## Deployment
 
 This project is configured for easy deployment on Vercel.
+
+The API is live at:
+https://genderize-plum.vercel.app/api/classify?name=richard
