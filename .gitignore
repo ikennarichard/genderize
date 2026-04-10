@@ -1,2 +1,15 @@
+# Executables
 *.exe
 *.exe.*
+*.dll
+*.so
+*.dylib
+
+# Object files
+*.o
+*.obj
+
+# Binaries
+*.bin
+*.out
+*.app

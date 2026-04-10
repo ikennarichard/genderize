@@ -1,9 +1,8 @@
-package main
+package handler
 
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"time"
 )
@@ -130,18 +129,11 @@ func buildProcessedData(apiResp *GenderizeResponse) Data {
     }
 }
 
-func main() {
-    mux := http.NewServeMux()
-    mux.HandleFunc("GET /api/classify", Classify)
+func Handler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet && r.URL.Path == "/api/classify" {
+		Classify(w, r)
+		return
+	}
 
-    server := &http.Server{
-        Addr:         ":8080",
-        Handler:      mux,
-        ReadTimeout:  10 * time.Second,
-        WriteTimeout: 15 * time.Second,
-        IdleTimeout:  60 * time.Second,
-    }
-
-    log.Println("Server starting on :8080")
-    log.Fatal(server.ListenAndServe())
+	http.NotFound(w, r)
 }
