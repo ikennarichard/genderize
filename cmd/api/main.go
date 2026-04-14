@@ -1,34 +1,48 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"time"
 
+	"github.com/ikennarichard/genderize-classifier/internal/handler"
+	"github.com/ikennarichard/genderize-classifier/internal/store"
 )
 
 func main() {
-    mux := http.NewServeMux()
-      mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-    fmt.Fprintln(w, "Up and running")
-  })
-    mux.HandleFunc("GET /api/classify", handler.Classify)
+	s := store.New()
+	h := handler.New(s)
 
-    port := os.Getenv("PORT")
-    if port == "" {
-        port = "8080"
-    }
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
 
-    server := &http.Server{
-        Addr:         ":" + port,
-        Handler:      mux,
-        ReadTimeout:  10 * time.Second,
-        WriteTimeout: 15 * time.Second,
-        IdleTimeout:  60 * time.Second,
-    }
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
 
-    log.Printf("Server starting on :%s", port)
-    log.Fatal(server.ListenAndServe())
+	server := &http.Server{
+		Addr:         ":" + port,
+		Handler:      withCORS(mux),
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	log.Printf("Server listening on :%s", port)
+	log.Fatal(server.ListenAndServe())
+}
+
+func withCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
