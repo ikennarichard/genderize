@@ -83,6 +83,31 @@ The system automatically seeds **2026 unique profiles** on the first run using `
 go run cmd/api/main.go
 ```
 
+## Quick Test Links
+
+Use these links to verify the filtering, sorting, and NLP parsing logic.
+
+1. **Natural Language Search**
+
+- Young Nigerians: https://genderize-plum.vercel.app/api/profiles/search?q=young+males+from+nigeria
+- Age & Gender Intent: https://genderize-plum.vercel.app/api/profiles/search?q=females+above+30
+- Specific Demographics: https://genderize-plum.vercel.app/api/profiles/search?q=adult+males+from+kenya
+
+2. **Advanced Filtering**
+
+- Combined Filters: https://genderize-plum.vercel.app/api/profiles?gender=male&country_id=NG&min_age=25
+- Confidence Thresholds: https://genderize-plum.vercel.app/api/profiles?min_gender_probability=0.95
+
+3. **Sorting & Pagination**
+
+- Sort by Age (Desc): https://genderize-plum.vercel.app/api/profiles?sort_by=age&order=desc
+- Paginated Results (Page 2): https://genderize-plum.vercel.app/api/profiles?page=2&limit=10
+
+4. **Validation & Error Handling**
+
+- Invalid Type (422 Error): https://genderize-plum.vercel.app/api/profiles?min_age=abc
+- Logic Error (400 Error): https://genderize-plum.vercel.app/api/profiles?min_age=50&max_age=20
+
 ## Deployment
 
 Live on Vercel: [https://genderize-plum.vercel.app](https://genderize-plum.vercel.app)
