@@ -39,15 +39,15 @@ func (h *Handler) createProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	existing, err := h.repo.GetByName(r.Context(), name)
-	dataReponse := fromDomain(existing)
 	if err == nil && existing != nil {
-		utils.Respond(w, http.StatusOK, ProfileResponse{
-			Status:  "success",
-			Message: "Profile already exists",
-			Data:    &dataReponse,
-		})
-		return
-	}
+        dataResponse := fromDomain(existing) // Now this is safe
+        utils.Respond(w, http.StatusOK, ProfileResponse{
+            Status:  "success",
+            Message: "Profile already exists",
+            Data:    &dataResponse,
+        })
+        return
+    }
 
 	profile, err := service.BuildProfile(name)
 	if err != nil {
@@ -114,6 +114,7 @@ func (h *Handler) deleteProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 func fromDomain(p *domain.Profile) ProfileDTO {
+
 	return ProfileDTO{
 		ID:                 p.ID.String(),
 		Name:               p.Name,
