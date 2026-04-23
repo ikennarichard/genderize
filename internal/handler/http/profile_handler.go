@@ -2,7 +2,9 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/ikennarichard/genderize-classifier/internal/domain"
@@ -78,23 +80,56 @@ func (h *Handler) getProfile(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) listProfiles(w http.ResponseWriter, r *http.Request) {
     q := r.URL.Query()
 
-    filters := domain.ProfileFilters{
-        Gender:    strings.TrimSpace(q.Get("gender")),
-        CountryID: strings.TrimSpace(q.Get("country_id")),
-        AgeGroup:  strings.TrimSpace(q.Get("age_group")),
-        Limit:     50,
-        Offset:    0,
+    parseInt := func(key string) (*int, error) {
+        val := q.Get(key)
+        if val == "" { return nil, nil }
+        i, err := strconv.Atoi(val)
+        if err != nil { return nil, err }
+        return &i, nil
     }
 
-    profiles, err := h.repo.List(r.Context(), filters)
+    parseFloat := func(key string) (*float64, error) {
+        val := q.Get(key)
+        if val == "" { return nil, nil }
+        f, err := strconv.ParseFloat(val, 64)
+        if err != nil { return nil, err }
+        return &f, nil
+    }
+
+    filters := domain.ProfileFilters{
+        Gender:    strings.TrimSpace(q.Get("gender")),
+        AgeGroup:  strings.TrimSpace(q.Get("age_group")),
+        CountryID: strings.TrimSpace(q.Get("country_id")),
+    }
+
+    var err error
+    if filters.MinAge, err = parseInt("min_age"); err != nil {
+        utils.RespondError(w, http.StatusUnprocessableEntity, "Invalid min_age parameter")
+        return
+    }
+    if filters.MaxAge, err = parseInt("max_age"); err != nil {
+        utils.RespondError(w, http.StatusUnprocessableEntity, "Invalid max_age parameter")
+        return
+    }
+    if filters.MinGenderProb, err = parseFloat("min_gender_probability"); err != nil {
+        utils.RespondError(w, http.StatusUnprocessableEntity, "Invalid min_gender_probability parameter")
+        return
+    }
+    if filters.MinCountryProb, err = parseFloat("min_country_probability"); err != nil {
+        utils.RespondError(w, http.StatusUnprocessableEntity, "Invalid min_country_probability parameter")
+        return
+    }
+
+    profiles, err := h.repo.GetFiltered(r.Context(), filters)
     if err != nil {
-        utils.RespondError(w, http.StatusInternalServerError, "failed to retrieve profiles")
+        fmt.Println("list_profiles_failed", "error", err)
+        utils.RespondError(w, http.StatusInternalServerError, "Internal server error")
         return
     }
 
     data := make([]ProfileDTO, len(profiles))
     for i, p := range profiles {
-        data[i] = fromDomain(p)
+        data[i] = fromDomain(&p)
     }
 
     utils.Respond(w, http.StatusOK, map[string]any{

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -129,6 +130,68 @@ func (r *PostgresProfileRepository) List(ctx context.Context, f domain.ProfileFi
         profiles = append(profiles, p)
     }
     return profiles, rows.Err()
+}
+
+func (r *PostgresProfileRepository) GetFiltered(ctx context.Context, f domain.ProfileFilters) ([]domain.Profile, error) {
+    // Start with a base query. 1=1 is a senior trick to allow appending "AND ..." easily.
+    query := `
+        SELECT id, name, gender, gender_probability, age, age_group, 
+               country_id, country_name, country_probability, created_at 
+        FROM profiles WHERE 1=1`
+    
+    var args []any
+    argID := 1
+
+    addCondition := func(column, operator string, value any) {
+        query += fmt.Sprintf(" AND %s %s $%d", column, operator, argID)
+        args = append(args, value)
+        argID++
+    }
+
+    // Apply filters
+    if f.Gender != "" {
+        addCondition("gender", "=", strings.ToLower(f.Gender))
+    }
+    if f.AgeGroup != "" {
+        addCondition("age_group", "=", strings.ToLower(f.AgeGroup))
+    }
+    if f.CountryID != "" {
+        addCondition("country_id", "=", strings.ToUpper(f.CountryID))
+    }
+    if f.MinAge != nil {
+        addCondition("age", ">=", *f.MinAge)
+    }
+    if f.MaxAge != nil {
+        addCondition("age", "<=", *f.MaxAge)
+    }
+    if f.MinGenderProb != nil {
+        addCondition("gender_probability", ">=", *f.MinGenderProb)
+    }
+    if f.MinCountryProb != nil {
+        addCondition("country_probability", ">=", *f.MinCountryProb)
+    }
+
+    // Execute query
+    rows, err := r.db.Query(ctx, query, args...)
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+
+    var profiles []domain.Profile
+    for rows.Next() {
+        var p domain.Profile
+        err := rows.Scan(
+            &p.ID, &p.Name, &p.Gender, &p.GenderProbability, &p.Age, &p.AgeGroup,
+            &p.CountryID, &p.CountryName, &p.CountryProbability, &p.CreatedAt,
+        )
+        if err != nil {
+            return nil, err
+        }
+        profiles = append(profiles, p)
+    }
+
+    return profiles, nil
 }
 
 func (r *PostgresProfileRepository) scanProfile(row pgx.Row) (*domain.Profile, error) {

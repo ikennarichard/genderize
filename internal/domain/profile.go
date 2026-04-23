@@ -22,11 +22,17 @@ type Profile struct {
 }
 
 type ProfileFilters struct {
-    Gender   string
-    CountryID string
-    AgeGroup  string
     Limit     int
     Offset    int
+	MinGenderProbability *float64
+	MinCountryProbability *float64
+    Gender         string
+    AgeGroup       string
+    CountryID      string
+    MinAge         *int
+    MaxAge         *int
+    MinGenderProb  *float64
+    MinCountryProb *float64
 }
 
 type ProfileRepository interface {
@@ -36,4 +42,5 @@ type ProfileRepository interface {
 	Update(ctx context.Context, profile *Profile) error
 	Delete(ctx context.Context, id string) error
 	List(ctx context.Context, filters ProfileFilters) ([]*Profile, error)
+    GetFiltered(ctx context.Context, f ProfileFilters) ([]Profile, error)
 }
