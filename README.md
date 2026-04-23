@@ -80,8 +80,7 @@ GET /api/profiles/search?q=young+males+from+nigeria
 The system automatically seeds **2026 unique profiles** on the first run using `go:embed` to prevent duplicates.
 
 ```bash
-go run cmd/seed/main.go
-go run main.go
+go run cmd/api/main.go
 ```
 
 ## Deployment
