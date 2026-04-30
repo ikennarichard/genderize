@@ -302,7 +302,7 @@ func (h *AuthHandler) GitHubCallback(w http.ResponseWriter, r *http.Request) {
 
 	dashboardURL := os.Getenv("DASHBOARD_URL")
 	if dashboardURL == "" {
-			dashboardURL = "https://ikennarichard.github.io/insighta-web/dashboard.html"
+			dashboardURL = "https://insighta-web-jade.vercel.app/dashboard.html"
 	}
 
 	// redirect web user to dashboard 
