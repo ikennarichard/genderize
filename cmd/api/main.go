@@ -89,7 +89,6 @@ func RegisterRoutes(r *chi.Mux, h *handler.ProfileHandler, authH *handler.AuthHa
 	r.Use(chimiddleware.Logger)    
 	r.Use(chimiddleware.Recoverer)
 
-	// In RegisterRoutes — add above all other routes
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 			utils.Respond(w, http.StatusOK, map[string]string{
 					"status": "ok",
