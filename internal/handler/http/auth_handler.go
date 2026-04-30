@@ -287,17 +287,17 @@ func (h *AuthHandler) GitHubCallback(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name: "at", Value: access, Path: "/",
 		MaxAge:   int((15 * time.Minute).Seconds()),
-		HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
+		HttpOnly: true, Secure: true, SameSite: http.SameSiteNoneMode,
 	})
 	http.SetCookie(w, &http.Cookie{
 		Name: "rt", Value: refresh, Path: "/",
 		MaxAge:   int((7 * 24 * time.Hour).Seconds()),
-		HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
+		HttpOnly: true, Secure: true, SameSite: http.SameSiteNoneMode,
 	})
 	http.SetCookie(w, &http.Cookie{
 		Name: "csrf_token", Value: csrfToken, Path: "/",
 		MaxAge:   int((7 * 24 * time.Hour).Seconds()),
-		HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
+		HttpOnly: true, Secure: true, SameSite: http.SameSiteNoneMode,
 	})
 
 	dashboardURL := os.Getenv("DASHBOARD_URL")
@@ -345,12 +345,12 @@ func (h *AuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
         http.SetCookie(w, &http.Cookie{
             Name: "at", Value: newAccess, Path: "/",
             MaxAge: int((15 * time.Minute).Seconds()),
-            HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
+            HttpOnly: true, Secure: true, SameSite: http.SameSiteNoneMode,
         })
         http.SetCookie(w, &http.Cookie{
             Name: "rt", Value: newRefresh, Path: "/",
             MaxAge: int((7 * 24 * time.Hour).Seconds()),
-            HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
+            HttpOnly: true, Secure: true, SameSite: http.SameSiteNoneMode,
         })
     }
 }
@@ -365,7 +365,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		for _, name := range []string{"at", "rt", "csrf_token"} {
 			http.SetCookie(w, &http.Cookie{
 				Name: name, Value: "", Path: "/", MaxAge: -1,
-				HttpOnly: true, SameSite: http.SameSiteLaxMode,
+				HttpOnly: true, SameSite: http.SameSiteNoneMode,
 			})
 		}
 	} else {
