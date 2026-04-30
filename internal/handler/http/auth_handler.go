@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -265,9 +266,14 @@ func (h *AuthHandler) GitHubCallback(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true, Secure: false, SameSite: http.SameSiteLaxMode,
 	})
 
+	dashboardURL := os.Getenv("DASHBOARD_URL")
+	if dashboardURL == "" {
+			dashboardURL = ""
+	}
+
 	// redirect web user to dashboard 
 	http.Redirect(w, r,
-		"http://localhost:5500/dashboard.html",
+		dashboardURL,
 		http.StatusTemporaryRedirect,
 	)
 }
