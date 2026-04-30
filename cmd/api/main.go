@@ -15,6 +15,7 @@ import (
 	"github.com/ikennarichard/genderize-classifier/internal/middleware"
 	"github.com/ikennarichard/genderize-classifier/internal/repository"
 	"github.com/ikennarichard/genderize-classifier/internal/service"
+	"github.com/ikennarichard/genderize-classifier/internal/utils"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
 )
@@ -87,6 +88,14 @@ func RegisterRoutes(r *chi.Mux, h *handler.ProfileHandler, authH *handler.AuthHa
 
 	r.Use(chimiddleware.Logger)    
 	r.Use(chimiddleware.Recoverer)
+
+	// In RegisterRoutes — add above all other routes
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+			utils.Respond(w, http.StatusOK, map[string]string{
+					"status": "ok",
+					"env":    os.Getenv("ENV"),
+			})
+	})
 
 	r.Route("/auth", func(r chi.Router) {
 		r.Use(middleware.RateLimit(60, 60))
