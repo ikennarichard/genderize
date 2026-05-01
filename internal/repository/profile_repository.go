@@ -138,86 +138,148 @@ func (r *PostgresProfileRepository) List(ctx context.Context, f domain.ProfileFi
 }
 
 func (r *PostgresProfileRepository) GetFiltered(
-    ctx context.Context,
-    f domain.ProfileFilters,
-    page int,
-    limit int,
+	ctx context.Context,
+	f domain.ProfileFilters,
+	page int,
+	limit int,
 ) ([]domain.Profile, int, error) {
 
-    baseQuery, args := r.buildFilterQuery(f)
+	baseQuery, args := r.buildFilterQuery(f)
 
-    query := `
-    SELECT id, name, gender, gender_probability, age, age_group,
-           country_id, country_name, country_probability, created_at,
-           COUNT(*) OVER() as total_count
-    ` + baseQuery
+	query := `
+	SELECT id, name, gender, gender_probability, sample_size, age, age_group,
+	       country_id, country_name, country_probability, created_at,
+	       COUNT(*) OVER() as total_count
+	` + baseQuery
 
+	allowedSortColumns := map[string]string{
+		"age":                "age",
+		"name":               "name",
+		"created_at":         "created_at",
+		"gender_probability": "gender_probability",
+	}
 
-    allowedSortColumns := map[string]string{
-        "age":                "age",
-        "created_at":         "created_at",
-        "gender_probability": "gender_probability",
-    }
+	sortBy := "created_at"
+	if col, ok := allowedSortColumns[f.SortBy]; ok {
+		sortBy = col
+	}
 
-    sortBy := "created_at"
-    if col, ok := allowedSortColumns[f.SortBy]; ok {
-        sortBy = col
-    }
+	order := "DESC"
+	if strings.ToLower(f.Order) == "asc" {
+		order = "ASC"
+	}
 
-    order := "DESC"
-    if strings.ToLower(f.Order) == "asc" {
-        order = "ASC"
-    }
+	query += fmt.Sprintf(" ORDER BY %s %s", sortBy, order)
 
-    query += fmt.Sprintf(" ORDER BY %s %s", sortBy, order)
+	if limit <= 0 || limit > 50 {
+		limit = 10
+	}
+	if page < 1 {
+		page = 1
+	}
 
-    if limit <= 0 || limit > 50 {
-        limit = 10
-    }
-    if page < 1 {
-        page = 1
-    }
+	offset := (page - 1) * limit
+	query += fmt.Sprintf(" LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+	args = append(args, limit, offset)
 
-    offset := (page - 1) * limit
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("query failed: %w", err)
+	}
+	defer rows.Close()
 
-    query += fmt.Sprintf(" LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
-    args = append(args, limit, offset)
+	var profiles []domain.Profile
+	total := 0
 
-    rows, err := r.db.Query(ctx, query, args...)
-    if err != nil {
-        return nil, 0, err
-    }
-    defer rows.Close()
+	for rows.Next() {
+		var p domain.Profile
+		err := rows.Scan(
+			&p.ID,
+			&p.Name,
+			&p.Gender,
+			&p.GenderProbability,
+			&p.SampleSize,
+			&p.Age,
+			&p.AgeGroup,
+			&p.CountryID,
+			&p.CountryName,
+			&p.CountryProbability,
+			&p.CreatedAt,
+			&total,
+		)
+		if err != nil {
+			return nil, 0, fmt.Errorf("scan failed: %w", err)
+		}
+		profiles = append(profiles, p)
+	}
 
-    var profiles []domain.Profile
-    total := 0
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
 
-    for rows.Next() {
-        var p domain.Profile
-        err := rows.Scan(
-            &p.ID,
-            &p.Name,
-            &p.Gender,
-            &p.GenderProbability,
-            &p.Age,
-            &p.AgeGroup,
-            &p.CountryID,
-            &p.CountryName,
-            &p.CountryProbability,
-            &p.CreatedAt,
-            &total,
-        )
-        if err != nil {
-            return nil, 0, err
-        }
-        profiles = append(profiles, p)
-    }
+	return profiles, total, nil
+}
 
-    if err := rows.Err(); err != nil {
-        return nil, 0, err
-    }
+func (r *PostgresProfileRepository) GetAllFiltered(
+	ctx context.Context,
+	f domain.ProfileFilters,
+) ([]domain.Profile, error) {
 
-    return profiles, total, nil
+	baseQuery, args := r.buildFilterQuery(f)
+	query := `
+	SELECT id, name, gender, gender_probability, sample_size, age, age_group,
+	       country_id, country_name, country_probability, created_at
+	` + baseQuery
+
+	allowedSortColumns := map[string]string{
+		"age":                "age",
+		"name":               "name",
+		"created_at":         "created_at",
+		"gender_probability": "gender_probability",
+	}
+
+	sortBy := "created_at"
+	if col, ok := allowedSortColumns[f.SortBy]; ok {
+		sortBy = col
+	}
+
+	order := "DESC"
+	if strings.ToLower(f.Order) == "asc" {
+		order = "ASC"
+	}
+
+	query += fmt.Sprintf(" ORDER BY %s %s", sortBy, order)
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query failed: %w", err)
+	}
+	defer rows.Close()
+
+	var profiles []domain.Profile
+
+	for rows.Next() {
+		var p domain.Profile
+		err := rows.Scan(
+			&p.ID,
+			&p.Name,
+			&p.Gender,
+			&p.GenderProbability,
+			&p.SampleSize,
+			&p.Age,
+			&p.AgeGroup,
+			&p.CountryID,
+			&p.CountryName,
+			&p.CountryProbability,
+			&p.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan failed: %w", err)
+		}
+		profiles = append(profiles, p)
+	}
+
+	return profiles, rows.Err()
 }
 
 func (r *PostgresProfileRepository) scanProfile(row pgx.Row) (*domain.Profile, error) {
@@ -237,104 +299,44 @@ func (r *PostgresProfileRepository) scanProfile(row pgx.Row) (*domain.Profile, e
 }
 
 
-func (r *PostgresProfileRepository) GetAllFiltered(
-    ctx context.Context,
-    f domain.ProfileFilters,
-) ([]domain.Profile, error) {
-
-    baseQuery, args := r.buildFilterQuery(f)
-
-    query := `
-    SELECT id, name, gender, gender_probability, age, age_group,
-           country_id, country_name, country_probability, created_at
-    ` + baseQuery
-
-    allowedSortColumns := map[string]string{
-        "age":                "age",
-        "created_at":         "created_at",
-        "gender_probability": "gender_probability",
-    }
-
-    sortBy := "created_at"
-    if col, ok := allowedSortColumns[f.SortBy]; ok {
-        sortBy = col
-    }
-
-    order := "DESC"
-    if strings.ToLower(f.Order) == "asc" {
-        order = "ASC"
-    }
-
-    query += fmt.Sprintf(" ORDER BY %s %s", sortBy, order)
-
-    rows, err := r.db.Query(ctx, query, args...)
-    if err != nil {
-        return nil, err
-    }
-    defer rows.Close()
-
-    var profiles []domain.Profile
-
-    for rows.Next() {
-        var p domain.Profile
-        err := rows.Scan(
-            &p.ID,
-            &p.Name,
-            &p.Gender,
-            &p.GenderProbability,
-            &p.Age,
-            &p.AgeGroup,
-            &p.CountryID,
-            &p.CountryName,
-            &p.CountryProbability,
-            &p.CreatedAt,
-        )
-        if err != nil {
-            return nil, err
-        }
-        profiles = append(profiles, p)
-    }
-
-    if err := rows.Err(); err != nil {
-        return nil, err
-    }
-
-    return profiles, nil
-}
-
-
 func (r *PostgresProfileRepository) buildFilterQuery(f domain.ProfileFilters) (string, []any) {
-    query := `FROM profiles WHERE 1=1`
-    var args []any
-    argID := 1
+	query := `FROM profiles WHERE 1=1`
+	var args []any
+	argID := 1
 
-    addCondition := func(condition string, value any) {
-        query += fmt.Sprintf(" AND %s", fmt.Sprintf(condition, argID))
-        args = append(args, value)
-        argID++
-    }
+	addCondition := func(condition string, value any) {
+		query += fmt.Sprintf(" AND "+condition, argID)
+		args = append(args, value)
+		argID++
+	}
 
-    if f.Gender != "" {
-        addCondition("gender ILIKE $%d", f.Gender)
-    }
+	if f.Gender != "" {
+		addCondition("gender ILIKE $%d", f.Gender)
+	}
 
-    if f.AgeGroup != "" {
-        addCondition("age_group ILIKE $%d", f.AgeGroup)
-    }
+	if f.AgeGroup != "" {
+		addCondition("age_group ILIKE $%d", f.AgeGroup)
+	}
 
-    if f.CountryID != "" {
-        searchTerm := "%" + strings.TrimSpace(f.CountryID) + "%"
-        query += fmt.Sprintf(" AND (country_id ILIKE $%d OR country_name ILIKE $%d)", argID, argID)
-        args = append(args, searchTerm)
-        argID++
-    }
+	if f.CountryID != "" {
+		query += fmt.Sprintf(" AND (country_id ILIKE $%d OR country_name ILIKE $%d)", argID, argID+1)
+		args = append(args, f.CountryID, f.CountryID+"%")
+		argID += 2
+	}
 
-    if f.MinAge != nil {
-        addCondition("age >= $%d", *f.MinAge)
-    }
-    if f.MaxAge != nil {
-        addCondition("age <= $%d", *f.MaxAge)
-    }
+	if f.MinAge != nil {
+		addCondition("age >= $%d", *f.MinAge)
+	}
+	if f.MaxAge != nil {
+		addCondition("age <= $%d", *f.MaxAge)
+	}
 
-    return query, args
+	if f.MinGenderProb != nil {
+		addCondition("gender_probability >= $%d", *f.MinGenderProb)
+	}
+	if f.MinCountryProb != nil {
+		addCondition("country_probability >= $%d", *f.MinCountryProb)
+	}
+
+	return query, args
 }
