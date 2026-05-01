@@ -64,13 +64,13 @@ func (s *TokenService) ValidateAccessToken(tokenString string) (*Claims, error) 
 }
 
 func (s *TokenService) GenerateTokenPair(ctx context.Context, user *domain.User) (string, string, error) {
-	accessString, err := s.generateToken(user, 3*time.Minute)
+	accessString, err := s.generateToken(user, 10*time.Minute)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to sign access token: %w", err)
 	}
 
 	refreshString := uuid.New().String()
-	expiry := time.Now().Add(5 * time.Minute)
+	expiry := time.Now().Add(20 * time.Minute)
 
     if err := s.sessionRepo.CreateSession(ctx, user.ID, refreshString, expiry); err != nil {
         return "", "", fmt.Errorf("failed to create session: %w", err)

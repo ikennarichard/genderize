@@ -54,9 +54,9 @@ func main() {
 	authHandler := handler.NewAuthHandler(oauthConfig, tokenService, userRepo, sessionRepo)
 
 	m := middleware.NewMiddleware(tokenService, userRepo, sessionRepo)
-	router := RegisterRoutes(r, profileHandler, authHandler, m)
+	router := config.RegisterRoutes(r, profileHandler, authHandler, m)
 
-	// if os.Getenv("ENV") != "production" {
+	if os.Getenv("ENV") != "production" {
     r.Get("/dev/analyst-token", func(w http.ResponseWriter, r *http.Request) {
         analyst, err := userRepo.FindByUsername(r.Context(), "insighta_analyst")
         if err != nil {
@@ -72,7 +72,24 @@ func main() {
             "analyst_token": access,
         })
     })
-// }
+
+		 r.Get("/dev/admin-token", func(w http.ResponseWriter, r *http.Request) {
+        admin, err := userRepo.FindByUsername(r.Context(), "insighta_admin")
+        if err != nil {
+            utils.RespondError(w, http.StatusNotFound, "Admin user not seeded")
+            return
+        }
+        access, refresh, err := tokenService.GenerateTokenPair(r.Context(), admin)
+        if err != nil {
+            utils.RespondError(w, http.StatusInternalServerError, "Failed")
+            return
+        }
+        utils.Respond(w, http.StatusOK, map[string]string{
+            "access_token":  access,
+            "refresh_token": refresh,
+        })
+    })
+}
 
 	// seed data
 	if err := repository.SeedFromJSON(pool, ctx, "seed_profiles.json"); err != nil {
