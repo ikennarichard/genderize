@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
+	"github.com/ikennarichard/genderize-classifier/internal/cache"
 	"github.com/ikennarichard/genderize-classifier/internal/config"
 	handler "github.com/ikennarichard/genderize-classifier/internal/handler/http"
 	"github.com/ikennarichard/genderize-classifier/internal/middleware"
@@ -49,12 +50,25 @@ func main() {
 		Endpoint:     github.Endpoint,
 	}
 
-	// handlers
-	profileHandler := handler.New(profileRepo)
-	authHandler := handler.NewAuthHandler(oauthConfig, tokenService, userRepo, sessionRepo)
+	// Cache is optional — system works without it if Redis is unavailable
+	var profileCache *cache.Cache
+	if redisURL := os.Getenv("REDIS_URL"); redisURL != "" {
+		var err error
+		profileCache, err = cache.New(redisURL)
+		if err != nil {
+			slog.Warn("Redis unavailable — running without cache", "error", err)
+		} else {
+			slog.Info("Cache connected")
+		}
+	}
 
 	m := middleware.NewMiddleware(tokenService, userRepo, sessionRepo)
-	router := config.RegisterRoutes(r, profileHandler, authHandler, m)
+	profileHandler := handler.New(profileRepo, profileCache)
+	authHandler := handler.NewAuthHandler(oauthConfig, tokenService, userRepo, sessionRepo)
+
+	importHandler := handler.NewImportHandler(profileRepo, profileCache)
+
+	router := config.RegisterRoutes(r, profileHandler, authHandler, m, *importHandler)
 
 	if os.Getenv("ENV") != "production" {
     r.Get("/dev/analyst-token", func(w http.ResponseWriter, r *http.Request) {

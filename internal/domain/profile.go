@@ -40,6 +40,7 @@ type ProfileFilters struct {
 type ProfileRepository interface {
 	Create(ctx context.Context, profile *Profile) error
 	GetByID(ctx context.Context, id string) (*Profile, error)
+    BulkCreate(ctx context.Context, profiles []Profile) error 
 	GetByName(ctx context.Context, name string) (*Profile, error)
 	Update(ctx context.Context, profile *Profile) error
 	Delete(ctx context.Context, id string) error

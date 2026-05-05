@@ -6,8 +6,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER} # ${VARIABLE_NAME:-default_value}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "5435:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data  # persists data
     healthcheck:
@@ -38,7 +36,13 @@ services:
       - ENV=${ENV:-development}
     networks:
       - app_network
-
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - app_network
 volumes:
   postgres_data:
 

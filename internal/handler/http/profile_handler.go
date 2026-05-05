@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ikennarichard/genderize-classifier/internal/cache"
 	"github.com/ikennarichard/genderize-classifier/internal/domain"
 	"github.com/ikennarichard/genderize-classifier/internal/service"
 	"github.com/ikennarichard/genderize-classifier/internal/utils"
@@ -16,10 +18,11 @@ import (
 
 type ProfileHandler struct {
 	repo domain.ProfileRepository 
+    cache *cache.Cache
 }
 
-func New(repo domain.ProfileRepository) *ProfileHandler {
-	return &ProfileHandler{repo: repo}
+func New(repo domain.ProfileRepository, cache *cache.Cache) *ProfileHandler {
+	return &ProfileHandler{repo: repo, cache: cache}
 }
 
 func (h *ProfileHandler) DeleteProfile(w http.ResponseWriter, r *http.Request) {
@@ -28,6 +31,14 @@ func (h *ProfileHandler) DeleteProfile(w http.ResponseWriter, r *http.Request) {
         utils.RespondError(w, http.StatusNotFound, "Profile not found")
         return
     }
+    if h.cache != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			h.cache.InvalidateProfileID(ctx, id)
+			h.cache.InvalidateListCache(ctx)
+		}()
+	}
     w.WriteHeader(http.StatusNoContent)
 }
 
@@ -40,10 +51,13 @@ func (h *ProfileHandler) SearchProfiles(w http.ResponseWriter, r *http.Request) 
     }
 
     filters, err := service.ParseNaturalLanguage(queryStr)
+		
     if err != nil {
         utils.RespondError(w, http.StatusBadRequest, "Unable to interpret query")
         return
     }
+
+
 
     page, _ := strconv.Atoi(r.URL.Query().Get("page"))
     limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
@@ -59,7 +73,21 @@ func (h *ProfileHandler) SearchProfiles(w http.ResponseWriter, r *http.Request) 
         return
     }
 
-    profiles, total, err := h.repo.GetFiltered(r.Context(), filters, page, limit)
+				// Normalize parsed filters — "women aged 20-45 in Nigeria" and
+// "Nigerian females between 20 and 45" now produce the same cache key
+normalizedFilters := service.NormalizeFilters(filters)
+key := service.NormalizedCacheKey(normalizedFilters, page, limit)
+
+	// Check cache first
+	if h.cache != nil {
+		var cached utils.PaginatedResponse
+		if hit, _ := h.cache.Get(r.Context(), key, &cached); hit {
+			utils.Respond(w, http.StatusOK, cached)
+			return
+		}
+	}
+
+    profiles, total, err := h.repo.GetFiltered(r.Context(), normalizedFilters, page, limit)
     if err != nil {
         utils.RespondError(w, http.StatusInternalServerError, "Database error")
         return
@@ -118,11 +146,25 @@ func (h *ProfileHandler) CreateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	createdRes := fromDomain(profile)
+    	if h.cache != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			h.cache.InvalidateListCache(ctx)
+		}()
+	}
 	utils.Respond(w, http.StatusCreated, ProfileResponse{Status: "success", Data: &createdRes})
 }
 
 func (h *ProfileHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+    	if h.cache != nil {
+		var cached ProfileResponse
+		if hit, _ := h.cache.Get(r.Context(), cache.IDKey(id), &cached); hit {
+			utils.Respond(w, http.StatusOK, cached)
+			return
+		}
+	}
 	profile, err := h.repo.GetByID(r.Context(), id)
 	if err != nil {
 		fmt.Println("GetProfile Error:", err)
@@ -130,7 +172,17 @@ func (h *ProfileHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	profileRes := fromDomain(profile)
-	utils.Respond(w, http.StatusOK, ProfileResponse{Status: "success", Data: &profileRes})
+   resp := ProfileResponse{Status: "success", Data: &profileRes}
+
+	if h.cache != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			h.cache.Set(ctx, cache.IDKey(id), resp, cache.ProfileByIDTTL)
+		}()
+	}
+
+	utils.Respond(w, http.StatusOK, resp)
 }
 
 func (h *ProfileHandler) ListProfiles(w http.ResponseWriter, r *http.Request) {
@@ -188,7 +240,36 @@ func (h *ProfileHandler) ListProfiles(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-		profiles, total, err := h.repo.GetFiltered(r.Context(), filters, page, limit)
+    	// Build cache key from all query params
+	cacheParams := map[string]string{
+		"gender":     filters.Gender,
+		"country_id": filters.CountryID,
+		"age_group":  filters.AgeGroup,
+		"sort_by":    filters.SortBy,
+		"order":      filters.Order,
+		"page":       fmt.Sprintf("%d", page),
+		"limit":      fmt.Sprintf("%d", limit),
+	}
+	if filters.MinAge != nil {
+		cacheParams["min_age"] = fmt.Sprintf("%d", *filters.MinAge)
+	}
+	if filters.MaxAge != nil {
+		cacheParams["max_age"] = fmt.Sprintf("%d", *filters.MaxAge)
+	}
+
+normalizedFilters := service.NormalizeFilters(filters)
+key := service.NormalizedCacheKey(normalizedFilters, page, limit)
+
+	// Check cache first
+	if h.cache != nil {
+		var cached utils.PaginatedResponse
+		if hit, _ := h.cache.Get(r.Context(), key, &cached); hit {
+			utils.Respond(w, http.StatusOK, cached)
+			return
+		}
+	}
+
+		profiles, total, err := h.repo.GetFiltered(r.Context(), normalizedFilters, page, limit)
     if err != nil {
 			fmt.Println("GetFiltered Error:", err.Error())
         utils.RespondError(w, 500, "Database failure")
@@ -206,6 +287,14 @@ func (h *ProfileHandler) ListProfiles(w http.ResponseWriter, r *http.Request) {
         "/api/v1/profiles", 
         r.URL.Query(),
     )
+
+	if h.cache != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			h.cache.Set(ctx, key, resp, cache.ProfileListTTL)
+		}()
+	}
 		utils.Respond(w, http.StatusOK, resp)
 }
 
