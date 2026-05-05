@@ -340,3 +340,53 @@ func (r *PostgresProfileRepository) buildFilterQuery(f domain.ProfileFilters) (s
 
 	return query, args
 }
+
+func (r *PostgresProfileRepository) BulkCreate(ctx context.Context, profiles []domain.Profile) error {
+	if len(profiles) == 0 {
+		return nil
+	}
+
+	// Build a single multi-row INSERT
+	// INSERT INTO profiles (...) VALUES ($1,$2,...),($n,$n+1,...) ON CONFLICT (name) DO NOTHING
+	cols := []string{
+		"id", "name", "gender", "gender_probability", "sample_size",
+		"age", "age_group", "country_id", "country_name", "country_probability", "created_at",
+	}
+	numCols := len(cols)
+
+	valueStrings := make([]string, 0, len(profiles))
+	args := make([]any, 0, len(profiles)*numCols)
+
+	for i, p := range profiles {
+		if p.ID == uuid.Nil {
+			p.ID = uuid.New()
+		}
+		if p.CreatedAt.IsZero() {
+			p.CreatedAt = time.Now().UTC()
+		}
+
+		placeholders := make([]string, numCols)
+		base := i * numCols
+		for j := range placeholders {
+			placeholders[j] = fmt.Sprintf("$%d", base+j+1)
+		}
+		valueStrings = append(valueStrings, "("+strings.Join(placeholders, ",")+")")
+
+		args = append(args,
+			p.ID, p.Name, p.Gender, p.GenderProbability, p.SampleSize,
+			p.Age, p.AgeGroup, p.CountryID, p.CountryName, p.CountryProbability, p.CreatedAt,
+		)
+	}
+
+	query := fmt.Sprintf(
+		"INSERT INTO profiles (%s) VALUES %s ON CONFLICT (name) DO NOTHING",
+		strings.Join(cols, ", "),
+		strings.Join(valueStrings, ", "),
+	)
+
+	_, err := r.db.Exec(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("bulk insert failed: %w", err)
+	}
+	return nil
+}
