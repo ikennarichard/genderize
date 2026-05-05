@@ -38,7 +38,13 @@ services:
       - ENV=${ENV:-development}
     networks:
       - app_network
-
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - app_network
 volumes:
   postgres_data:
 
