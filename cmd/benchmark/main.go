@@ -3,11 +3,14 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 type result struct {
@@ -199,6 +202,11 @@ func spaces(f float64) string {
 }
 
 func main() {
+	
+	if err := godotenv.Load(); err != nil {
+			log.Println("Running in production, skipping .env")
+	}
+
 	baseURL := os.Getenv("API_URL")
 	token := os.Getenv("API_TOKEN")
 
