@@ -1,6 +1,6 @@
-# Genderize Classifier
+# Insighta Lab
 
-A high-performance intuitive query engine.
+a demographic intelligence platform that stores structured profile data (e.g., age, gender, country) and allows users to query and analyze this data.
 
 ## Features
 
