@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
 
 jobs:
   lint:
@@ -23,7 +23,7 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/genderize_test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/insighta_test
       JWT_SECRET: test-secret
       GITHUB_CLIENT_ID: test-id
       GITHUB_CLIENT_SECRET: test-secret
@@ -35,7 +35,7 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: genderize_test
+          POSTGRES_DB: insighta_test
         ports:
           - 5432:5432
         options: >-
