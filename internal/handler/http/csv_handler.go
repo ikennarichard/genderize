@@ -12,7 +12,7 @@ import (
 func (h *ProfileHandler) ExportProfiles(w http.ResponseWriter, r *http.Request) {
     filters := h.parseFilters(r)
 
-    profiles, err := h.repo.GetAllFiltered(r.Context(), filters)
+    profiles, err := h.srv.GetAllFilteredProfiles(r.Context(), filters)
     if err != nil {
         utils.RespondError(w, http.StatusInternalServerError, "Failed to fetch profiles for export")
         return

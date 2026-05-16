@@ -51,10 +51,10 @@ func main() {
 	}
 
 	// Cache is optional — system works without it if Redis is unavailable
-	var profileCache *cache.Cache
+	var redisCache *cache.Cache
 	if redisURL := os.Getenv("REDIS_URL"); redisURL != "" {
 		var err error
-		profileCache, err = cache.New(redisURL)
+		redisCache, err = cache.New(redisURL)
 		if err != nil {
 			slog.Warn("Redis unavailable — running without cache", "error", err)
 		} else {
@@ -63,12 +63,12 @@ func main() {
 	}
 
 	m := middleware.NewMiddleware(tokenService, userRepo, sessionRepo)
-	profileHandler := handler.New(profileRepo, profileCache)
+
+	profileService := service.NewProfileService(profileRepo)
+	profileHandler := handler.NewProfileHandler(profileService, redisCache)
 	authHandler := handler.NewAuthHandler(oauthConfig, tokenService, userRepo, sessionRepo)
 
-	importHandler := handler.NewImportHandler(profileRepo, profileCache)
-
-	router := config.RegisterRoutes(r, profileHandler, authHandler, m, *importHandler)
+	router := config.RegisterRoutes(r, profileHandler, authHandler, m)
 
 	if os.Getenv("ENV") != "production" {
     r.Get("/dev/analyst-token", func(w http.ResponseWriter, r *http.Request) {

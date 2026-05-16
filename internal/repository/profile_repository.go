@@ -18,13 +18,13 @@ type PostgresProfileRepository struct {
 	db *pgxpool.Pool
 }
 
-func NewPostgresProfileRepository(db *pgxpool.Pool) domain.ProfileRepository {
+func NewPostgresProfileRepository(db *pgxpool.Pool) *PostgresProfileRepository {
 	return &PostgresProfileRepository{db: db}
 }
 
 const profileColumns = `id, name, gender, gender_probability, sample_size, age, age_group, country_id, country_name, country_probability, created_at`
 
-func (r *PostgresProfileRepository) Create(ctx context.Context, profile *domain.Profile) error {
+func (r *PostgresProfileRepository) CreateProfile(ctx context.Context, profile *domain.Profile) error {
 	if profile.ID == uuid.Nil {
 		profile.ID = uuid.New()
 	}
@@ -48,39 +48,41 @@ func (r *PostgresProfileRepository) Create(ctx context.Context, profile *domain.
 	return nil
 }
 
-func (r *PostgresProfileRepository) GetByID(ctx context.Context, id string) (*domain.Profile, error) {
+func (r *PostgresProfileRepository) GetProfileByID(ctx context.Context, id string) (*domain.Profile, error) {
 	query := `SELECT ` + profileColumns + ` FROM profiles WHERE id = $1`
-	return r.scanProfile(r.db.QueryRow(ctx, query, id))
+	return scanProfile(r.db.QueryRow(ctx, query, id))
 }
 
-func (r *PostgresProfileRepository) GetByName(ctx context.Context, name string) (*domain.Profile, error) {
+func (r *PostgresProfileRepository) GetProfileByName(ctx context.Context, name string) (*domain.Profile, error) {
 	query := `SELECT ` + profileColumns + ` FROM profiles WHERE name = $1`
-	return r.scanProfile(r.db.QueryRow(ctx, query, name))
+	return scanProfile(r.db.QueryRow(ctx, query, name))
 }
 
-func (r *PostgresProfileRepository) Update(ctx context.Context, p *domain.Profile) error {
+func (r *PostgresProfileRepository) UpdateProfile(ctx context.Context, p *domain.Profile) error {
 	query := `
 		UPDATE profiles SET
 			name = $2, gender = $3, gender_probability = $4, sample_size = $5,
 			age = $6, age_group = $7, country_id = $8, country_name = $9,
 			country_probability = $10
-		WHERE id = $1`
+		WHERE id = $1
+	`
 
 	res, err := r.db.Exec(ctx, query,
 		p.ID, p.Name, p.Gender, p.GenderProbability, p.SampleSize,
 		p.Age, p.AgeGroup, p.CountryID, p.CountryName, p.CountryProbability,
 	)
-
 	if err != nil {
-		return fmt.Errorf("failed to update profile: %w", err)
+		return fmt.Errorf("failed to execute update query: %w", err)
 	}
+
 	if res.RowsAffected() == 0 {
 		return utils.ErrNotFound
 	}
+
 	return nil
 }
 
-func (r *PostgresProfileRepository) Delete(ctx context.Context, id string) error {
+func (r *PostgresProfileRepository) DeleteProfile(ctx context.Context, id string) error {
 	query := `DELETE FROM profiles WHERE id = $1`
 	res, err := r.db.Exec(ctx, query, id)
 	if err != nil {
@@ -92,7 +94,7 @@ func (r *PostgresProfileRepository) Delete(ctx context.Context, id string) error
 	return nil
 }
 
-func (r *PostgresProfileRepository) List(ctx context.Context, f domain.ProfileFilters) ([]*domain.Profile, error) {
+func (r *PostgresProfileRepository) ListProfiles(ctx context.Context, f *domain.ProfileFilters) ([]*domain.Profile, error) {
     query := `SELECT ` + profileColumns + ` FROM profiles WHERE 1=1`
     var args []any
     argCount := 1
@@ -128,7 +130,7 @@ func (r *PostgresProfileRepository) List(ctx context.Context, f domain.ProfileFi
 
     var profiles []*domain.Profile
     for rows.Next() {
-        p, err := r.scanProfile(rows)
+        p, err := scanProfile(rows)
         if err != nil {
             return nil, err
         }
@@ -137,14 +139,15 @@ func (r *PostgresProfileRepository) List(ctx context.Context, f domain.ProfileFi
     return profiles, rows.Err()
 }
 
-func (r *PostgresProfileRepository) GetFiltered(
-	ctx context.Context,
-	f domain.ProfileFilters,
-	page int,
-	limit int,
+func (r *PostgresProfileRepository) FindFiltered(
+	ctx context.Context, 
+	baseQuery string, 
+	args []interface{}, 
+	sortBy string, 
+	order string, 
+	limit int, 
+	offset int,
 ) ([]domain.Profile, int, error) {
-
-	baseQuery, args := r.buildFilterQuery(f)
 
 	query := `
 	SELECT id, name, gender, gender_probability, sample_size, age, age_group,
@@ -152,33 +155,10 @@ func (r *PostgresProfileRepository) GetFiltered(
 	       COUNT(*) OVER() as total_count
 	` + baseQuery
 
-	allowedSortColumns := map[string]string{
-		"age":                "age",
-		"name":               "name",
-		"created_at":         "created_at",
-		"gender_probability": "gender_probability",
-	}
-
-	sortBy := "created_at"
-	if col, ok := allowedSortColumns[f.SortBy]; ok {
-		sortBy = col
-	}
-
-	order := "DESC"
-	if strings.ToLower(f.Order) == "asc" {
-		order = "ASC"
-	}
-
+	// Append ordering
 	query += fmt.Sprintf(" ORDER BY %s %s", sortBy, order)
 
-	if limit <= 0 || limit > 50 {
-		limit = 10
-	}
-	if page < 1 {
-		page = 1
-	}
-
-	offset := (page - 1) * limit
+	// Append pagination safely using positional arguments
 	query += fmt.Sprintf(" LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
 	args = append(args, limit, offset)
 
@@ -214,40 +194,26 @@ func (r *PostgresProfileRepository) GetFiltered(
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, 0, err
+		return nil, 0, fmt.Errorf("row iteration error: %w", err)
 	}
 
 	return profiles, total, nil
 }
 
-func (r *PostgresProfileRepository) GetAllFiltered(
+func (r *PostgresProfileRepository) FindAllFiltered(
 	ctx context.Context,
-	f domain.ProfileFilters,
+	baseQuery string,
+	args []interface{},
+	sortBy string,
+	order string,
 ) ([]domain.Profile, error) {
 
-	baseQuery, args := r.buildFilterQuery(f)
 	query := `
 	SELECT id, name, gender, gender_probability, sample_size, age, age_group,
 	       country_id, country_name, country_probability, created_at
 	` + baseQuery
 
-	allowedSortColumns := map[string]string{
-		"age":                "age",
-		"name":               "name",
-		"created_at":         "created_at",
-		"gender_probability": "gender_probability",
-	}
-
-	sortBy := "created_at"
-	if col, ok := allowedSortColumns[f.SortBy]; ok {
-		sortBy = col
-	}
-
-	order := "DESC"
-	if strings.ToLower(f.Order) == "asc" {
-		order = "ASC"
-	}
-
+	// Append ordering safely using sanitized inputs from the service
 	query += fmt.Sprintf(" ORDER BY %s %s", sortBy, order)
 
 	rows, err := r.db.Query(ctx, query, args...)
@@ -279,69 +245,14 @@ func (r *PostgresProfileRepository) GetAllFiltered(
 		profiles = append(profiles, p)
 	}
 
-	return profiles, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("row iteration error: %w", err)
+	}
+
+	return profiles, nil
 }
 
-func (r *PostgresProfileRepository) scanProfile(row pgx.Row) (*domain.Profile, error) {
-	var p domain.Profile
-	err := row.Scan(
-		&p.ID, &p.Name, &p.Gender, &p.GenderProbability, &p.SampleSize,
-		&p.Age, &p.AgeGroup, &p.CountryID, &p.CountryName,
-		&p.CountryProbability, &p.CreatedAt,
-	)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, utils.ErrNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("scan error: %w", err)
-	}
-	return &p, nil
-}
-
-
-func (r *PostgresProfileRepository) buildFilterQuery(f domain.ProfileFilters) (string, []any) {
-	query := `FROM profiles WHERE 1=1`
-	var args []any
-	argID := 1
-
-	addCondition := func(condition string, value any) {
-		query += fmt.Sprintf(" AND "+condition, argID)
-		args = append(args, value)
-		argID++
-	}
-
-	if f.Gender != "" {
-		addCondition("gender ILIKE $%d", f.Gender)
-	}
-
-	if f.AgeGroup != "" {
-		addCondition("age_group ILIKE $%d", f.AgeGroup)
-	}
-
-	if f.CountryID != "" {
-		query += fmt.Sprintf(" AND (country_id ILIKE $%d OR country_name ILIKE $%d)", argID, argID+1)
-		args = append(args, f.CountryID, f.CountryID+"%")
-		argID += 2
-	}
-
-	if f.MinAge != nil {
-		addCondition("age >= $%d", *f.MinAge)
-	}
-	if f.MaxAge != nil {
-		addCondition("age <= $%d", *f.MaxAge)
-	}
-
-	if f.MinGenderProb != nil {
-		addCondition("gender_probability >= $%d", *f.MinGenderProb)
-	}
-	if f.MinCountryProb != nil {
-		addCondition("country_probability >= $%d", *f.MinCountryProb)
-	}
-
-	return query, args
-}
-
-func (r *PostgresProfileRepository) BulkCreate(ctx context.Context, profiles []domain.Profile) error {
+func (r *PostgresProfileRepository) BulkCreateProfiles(ctx context.Context, profiles []domain.Profile) error {
 	if len(profiles) == 0 {
 		return nil
 	}
@@ -390,3 +301,64 @@ func (r *PostgresProfileRepository) BulkCreate(ctx context.Context, profiles []d
 	}
 	return nil
 }
+
+func scanProfile(row pgx.Row) (*domain.Profile, error) {
+	var p domain.Profile
+	err := row.Scan(
+		&p.ID, &p.Name, &p.Gender, &p.GenderProbability, &p.SampleSize,
+		&p.Age, &p.AgeGroup, &p.CountryID, &p.CountryName,
+		&p.CountryProbability, &p.CreatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, utils.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("scan error: %w", err)
+	}
+	return &p, nil
+}
+
+
+func buildFilterQuery(f *domain.ProfileFilters) (string, []any) {
+	query := `FROM profiles WHERE 1=1`
+	var args []any
+	argID := 1
+
+	addCondition := func(condition string, value any) {
+		query += fmt.Sprintf(" AND "+condition, argID)
+		args = append(args, value)
+		argID++
+	}
+
+	if f.Gender != "" {
+		addCondition("gender ILIKE $%d", f.Gender)
+	}
+
+	if f.AgeGroup != "" {
+		addCondition("age_group ILIKE $%d", f.AgeGroup)
+	}
+
+	if f.CountryID != "" {
+		query += fmt.Sprintf(" AND (country_id ILIKE $%d OR country_name ILIKE $%d)", argID, argID+1)
+		args = append(args, f.CountryID, f.CountryID+"%")
+		argID += 2
+	}
+
+	if f.MinAge != nil {
+		addCondition("age >= $%d", *f.MinAge)
+	}
+	if f.MaxAge != nil {
+		addCondition("age <= $%d", *f.MaxAge)
+	}
+
+	if f.MinGenderProb != nil {
+		addCondition("gender_probability >= $%d", *f.MinGenderProb)
+	}
+	if f.MinCountryProb != nil {
+		addCondition("country_probability >= $%d", *f.MinCountryProb)
+	}
+
+	return query, args
+}
+
+

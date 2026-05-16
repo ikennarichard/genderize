@@ -10,9 +10,9 @@ import (
 )
 
 
-func ParseNaturalLanguage(query string) (domain.ProfileFilters, error) {
+func ParseNaturalLanguage(query string) (*domain.ProfileFilters, error) {
     if strings.TrimSpace(query) == "" {
-        return domain.ProfileFilters{}, errors.New("empty query")
+        return &domain.ProfileFilters{}, errors.New("empty query")
     }
 
     q := strings.ToLower(strings.TrimSpace(query))
@@ -135,10 +135,10 @@ func ParseNaturalLanguage(query string) (domain.ProfileFilters, error) {
 
 
     if !parsedAnything {
-        return domain.ProfileFilters{}, errors.New("Unable to interpret query")
+        return &domain.ProfileFilters{}, errors.New("Unable to interpret query")
     }
 
-    return filters, nil
+    return &filters, nil
 }
 
 func containsWord(text, word string) bool {

@@ -19,7 +19,7 @@ import (
 //   - Age ranges derived from AgeGroup take precedence over explicit min/max
 //     only when explicit values are absent
 
-func NormalizeFilters(f domain.ProfileFilters) domain.ProfileFilters {
+func NormalizeFilters(f *domain.ProfileFilters) *domain.ProfileFilters {
 	n := f
 
 	n.Gender = normalizeGender(f.Gender)
@@ -98,7 +98,7 @@ func ageRangeFromGroup(group string) (int, int) {
 	}
 }
 
-func NormalizedCacheKey(f domain.ProfileFilters, page, limit int) string {
+func NormalizedCacheKey(f *domain.ProfileFilters, page, limit int) string {
 	n := NormalizeFilters(f)
 	var parts []string
 

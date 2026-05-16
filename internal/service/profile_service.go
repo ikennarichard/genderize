@@ -1,169 +1,148 @@
 package service
 
 import (
+	"context"
 	"fmt"
-	"sync"
-	"time"
+	"log/slog"
+	"strings"
 
-	"github.com/google/uuid"
-	"github.com/ikennarichard/insighta/internal/client"
 	"github.com/ikennarichard/insighta/internal/domain"
+	"github.com/ikennarichard/insighta/internal/repository"
 )
 
-
-func newApiError(apiName string) error {
-    return fmt.Errorf("%s returned an invalid response", apiName)
+type ProfileService struct {
+	repo *repository.PostgresProfileRepository
 }
 
-func ageGroup(age int) string {
-	switch {
-	case age <= 12:
-		return "child"
-	case age <= 19:
-		return "teenager"
-	case age <= 59:
-		return "adult"
-	default:
-		return "senior"
+func NewProfileService (repo *repository.PostgresProfileRepository) *ProfileService {
+	return &ProfileService{
+		repo: repo,
 	}
 }
 
-func topCountry(countries []client.Country) client.Country {
-	top := countries[0]
-	for _, c := range countries[1:] {
-		if c.Probability > top.Probability {
-			top = c
-		}
+func (h *ProfileService) CreateProfile(ctx context.Context, profile *domain.Profile) error {
+	if err := h.repo.CreateProfile(ctx, profile); err != nil {
+		slog.Error("failed to create profile", 
+            "error", err, 
+            "user_id", ctx.Value("user_id"),
+        )
+
+		return err
 	}
-	return top
+	return nil
 }
 
-type results struct {
-	gender      *client.GenderizeResponse
-	age         *client.AgifyResponse
-	nationality *client.NationalizeResponse
-	genderErr   error
-	ageErr      error
-	natErr      error
+func (s *ProfileService) UpdateProfile(ctx context.Context, p *domain.Profile) error {
+	
+	err := s.repo.UpdateProfile(ctx, p)
+	if err != nil {
+		return fmt.Errorf("failed to update profile: %w", err)
+	}
+
+	return nil
 }
 
-func fetchAll(name string) results {
-	var (
-		wg  sync.WaitGroup
-		res results
-	)
-	wg.Add(3)
-
-	go func() { defer wg.Done(); res.gender, res.genderErr = client.FetchGenderize(name) }()
-	go func() { defer wg.Done(); res.age, res.ageErr = client.FetchAgify(name) }()
-	go func() { defer wg.Done(); res.nationality, res.natErr = client.FetchNationalize(name) }()
-
-	wg.Wait()
-	return res
+func (s *ProfileService) DeleteProfile(ctx context.Context, id string) error {
+    if err := s.repo.DeleteProfile(ctx, id); err != nil {
+        return err
+    }
+		return nil
 }
 
+func (s *ProfileService) ListProfiles(ctx context.Context, filters *domain.ProfileFilters, page int, limit int) ([]domain.Profile, int, error) {
 
-func BuildProfile(name string) (*domain.Profile, error) {
-	res := fetchAll(name)
-
-	if res.genderErr != nil || res.gender.Gender == nil || res.gender.Count == 0 {
-		return nil, newApiError("Genderize")
-	}
-	if res.ageErr != nil || res.age.Age == nil {
-		return nil, newApiError("Agify")
-	}
-	if res.natErr != nil || len(res.nationality.Country) == 0 {
-		return nil, newApiError("Nationalize")
-	}
-
-	country := topCountry(res.nationality.Country)
-	id, _ := uuid.NewV7()
-
-	return &domain.Profile{
-		ID:                 id,
-		Name:               name,
-		Gender:             *res.gender.Gender,
-		GenderProbability:  res.gender.Probability,
-		SampleSize:         res.gender.Count,
-		Age:                *res.age.Age,
-		AgeGroup:           ageGroup(*res.age.Age),
-		CountryID:          country.CountryID,
-		CountryName:        resolveCountryName(country.CountryID),
-		CountryProbability: country.Probability,
-		CreatedAt:          time.Now().UTC(),
-	}, nil
+		profiles, total, err := s.GetFilteredProfiles(ctx, filters, page, limit)
+    if err != nil {
+			fmt.Println("GetFiltered Error:", err.Error())
+        return nil, 0, err
+    }
+		return profiles, total, err
 }
 
+func (s *ProfileService) GetProfileByName(ctx context.Context, name string) (*domain.Profile, error) {
+	profile, err := s.repo.GetProfileByName(ctx, name)
+	if err == nil && profile != nil {
 
-func resolveCountryName(code string) string {
-	countries := map[string]string{
-		"AF": "Afghanistan",
-		"AL": "Albania",
-		"DZ": "Algeria",
-		"AR": "Argentina",
-		"AU": "Australia",
-		"AT": "Austria",
-		"BD": "Bangladesh",
-		"BE": "Belgium",
-		"BR": "Brazil",
-		"BG": "Bulgaria",
-		"CA": "Canada",
-		"CL": "Chile",
-		"CN": "China",
-		"CO": "Colombia",
-		"HR": "Croatia",
-		"CZ": "Czech Republic",
-		"DK": "Denmark",
-		"EG": "Egypt",
-		"ET": "Ethiopia",
-		"FI": "Finland",
-		"FR": "France",
-		"DE": "Germany",
-		"GH": "Ghana",
-		"GR": "Greece",
-		"HU": "Hungary",
-		"IN": "India",
-		"ID": "Indonesia",
-		"IQ": "Iraq",
-		"IE": "Ireland",
-		"IL": "Israel",
-		"IT": "Italy",
-		"JP": "Japan",
-		"KE": "Kenya",
-		"MY": "Malaysia",
-		"MX": "Mexico",
-		"MA": "Morocco",
-		"NL": "Netherlands",
-		"NZ": "New Zealand",
-		"NG": "Nigeria",
-		"NO": "Norway",
-		"PK": "Pakistan",
-		"PE": "Peru",
-		"PH": "Philippines",
-		"PL": "Poland",
-		"PT": "Portugal",
-		"RO": "Romania",
-		"RU": "Russia",
-		"SA": "Saudi Arabia",
-		"ZA": "South Africa",
-		"ES": "Spain",
-		"SE": "Sweden",
-		"CH": "Switzerland",
-		"TZ": "Tanzania",
-		"TH": "Thailand",
-		"TN": "Tunisia",
-		"TR": "Turkey",
-		"UG": "Uganda",
-		"UA": "Ukraine",
-		"AE": "United Arab Emirates",
-		"GB": "United Kingdom",
-		"US": "United States",
-		"VN": "Vietnam",
-		"ZW": "Zimbabwe",
+        return profile, nil
+    }
+
+		return nil, err
+}
+
+func (s *ProfileService) GetFilteredProfiles(
+	ctx context.Context,
+	f *domain.ProfileFilters,
+	page int,
+	limit int,
+) ([]domain.Profile, int, error) {
+
+	// 1. Build basic filters
+	baseQuery, args := buildFilterQuery(f)
+
+	// 2. Validate & Sanitize Sorting Input
+	allowedSortColumns := map[string]string{
+		"age":                "age",
+		"name":               "name",
+		"created_at":         "created_at",
+		"gender_probability": "gender_probability",
 	}
 
-	if name, ok := countries[code]; ok {
-		return name
+	sortBy := "created_at"
+	if col, ok := allowedSortColumns[f.SortBy]; ok {
+		sortBy = col
 	}
-	return code
+
+	order := "DESC"
+	if strings.ToLower(f.Order) == "asc" {
+		order = "ASC"
+	}
+
+	// 3. Apply Pagination Sanitization rules
+	if limit <= 0 || limit > 50 {
+		limit = 10
+	}
+	if page < 1 {
+		page = 1
+	}
+	offset := (page - 1) * limit
+
+	// 4. Delegate DB execution and hydration completely to the repo layer
+	return s.repo.FindFiltered(ctx, baseQuery, args, sortBy, order, limit, offset)
+}
+
+func (s *ProfileService) GetAllFilteredProfiles(
+	ctx context.Context,
+	f *domain.ProfileFilters,
+) ([]domain.Profile, error) {
+
+
+	baseQuery, args := buildFilterQuery(f)
+
+	allowedSortColumns := map[string]string{
+		"age":                "age",
+		"name":               "name",
+		"created_at":         "created_at",
+		"gender_probability": "gender_probability",
+	}
+
+	sortBy := "created_at"
+	if col, ok := allowedSortColumns[f.SortBy]; ok {
+		sortBy = col
+	}
+
+	order := "DESC"
+	if strings.ToLower(f.Order) == "asc" {
+		order = "ASC"
+	}
+
+	return s.repo.FindAllFiltered(ctx, baseQuery, args, sortBy, order)
+}
+
+func (s *ProfileService) GetProfileByID(ctx context.Context, id string) (*domain.Profile, error) {
+	profile, err := s.repo.GetProfileByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get profile by id: %w", err)
+	}
+	
+	return profile, nil
 }

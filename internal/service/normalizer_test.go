@@ -59,8 +59,8 @@ func TestNormalizeFilters(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			keyA := NormalizedCacheKey(tt.a, 1, 10)
-			keyB := NormalizedCacheKey(tt.b, 1, 10)
+			keyA := NormalizedCacheKey(&tt.a, 1, 10)
+			keyB := NormalizedCacheKey(&tt.b, 1, 10)
 			if tt.sameKey && keyA != keyB {
 				t.Errorf("expected same key\n  A: %s\n  B: %s", keyA, keyB)
 			}

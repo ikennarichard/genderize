@@ -11,7 +11,7 @@ import (
 	"github.com/ikennarichard/insighta/internal/utils"
 )
 
-func RegisterRoutes(r *chi.Mux, h *handler.ProfileHandler, authH *handler.AuthHandler, m *middleware.Middleware, importHandler handler.ImportHandler) http.Handler {
+func RegisterRoutes(r *chi.Mux, h *handler.ProfileHandler, authH *handler.AuthHandler, m *middleware.Middleware) http.Handler {
 
 	r.Use(chimiddleware.Logger)    
 	r.Use(chimiddleware.Recoverer)
@@ -45,7 +45,7 @@ func RegisterRoutes(r *chi.Mux, h *handler.ProfileHandler, authH *handler.AuthHa
                 r.Get("/", h.ListProfiles)
                 r.Get("/search", h.SearchProfiles)
                 r.Get("/{id}", h.GetProfile)
-                r.Post("/import", importHandler.ImportProfiles)
+                r.Post("/import", h.ImportProfiles)
                 r.Get("/export", h.ExportProfiles)
             })
             r.Group(func(r chi.Router) {

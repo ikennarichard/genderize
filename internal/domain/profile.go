@@ -38,20 +38,12 @@ type ProfileFilters struct {
 }
 
 type ProfileRepository interface {
-	Create(ctx context.Context, profile *Profile) error
-	GetByID(ctx context.Context, id string) (*Profile, error)
-    BulkCreate(ctx context.Context, profiles []Profile) error 
-	GetByName(ctx context.Context, name string) (*Profile, error)
-	Update(ctx context.Context, profile *Profile) error
-	Delete(ctx context.Context, id string) error
-	List(ctx context.Context, filters ProfileFilters) ([]*Profile, error)
-  GetFiltered(
-    ctx context.Context,
-    f ProfileFilters,
-    page int,
-    limit int,
-) ([]Profile, int, error)
-    GetAllFiltered(ctx context.Context, f ProfileFilters) ([]Profile, error)
+	CreateProfile(ctx context.Context, profile *Profile) error
+	GetProfileByID(ctx context.Context, id string) (*Profile, error)
+	GetProfileByName(ctx context.Context, name string) (*Profile, error)
+	UpdateProfile(ctx context.Context, profile *Profile) error
+	DeleteProfile(ctx context.Context, id string) error
+	ListProfiles(ctx context.Context, filters *ProfileFilters) ([]*Profile, error)
 }
 
 func (f *ProfileFilters) Validate() error {

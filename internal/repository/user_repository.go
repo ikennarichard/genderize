@@ -17,7 +17,7 @@ type PostgresUserRepository struct {
 }
 
 func NewPostgresUserRepository(pool *pgxpool.Pool) domain.UserRepository {
-	return &PostgresUserRepository{pool: pool}
+	return &PostgresUserRepository{ pool: pool}
 }
 
 func (r *PostgresUserRepository) FindByUsername(ctx context.Context, username string) (*domain.User, error) {

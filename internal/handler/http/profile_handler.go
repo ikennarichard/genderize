@@ -11,23 +11,30 @@ import (
 	"time"
 
 	"github.com/ikennarichard/insighta/internal/cache"
-	"github.com/ikennarichard/insighta/internal/domain"
 	"github.com/ikennarichard/insighta/internal/service"
 	"github.com/ikennarichard/insighta/internal/utils"
 )
 
 type ProfileHandler struct {
-	repo domain.ProfileRepository 
-    cache *cache.Cache
+	srv *service.ProfileService 
+  cache *cache.Cache
 }
 
-func New(repo domain.ProfileRepository, cache *cache.Cache) *ProfileHandler {
-	return &ProfileHandler{repo: repo, cache: cache}
+const (
+	maxFileSize  = 100 << 20 // 100MB
+	chunkSize    = 500        // rows per batch insert
+	maxWorkers   = 4          // concurrent chunk workers
+)
+
+
+
+func NewProfileHandler(srv *service.ProfileService, cache *cache.Cache) *ProfileHandler {
+	return &ProfileHandler{srv: srv, cache: cache}
 }
 
 func (h *ProfileHandler) DeleteProfile(w http.ResponseWriter, r *http.Request) {
     id := r.PathValue("id")
-    if err := h.repo.Delete(r.Context(), id); err != nil {
+    if err := h.srv.DeleteProfile(r.Context(), id); err != nil {
         utils.RespondError(w, http.StatusNotFound, "Profile not found")
         return
     }
@@ -87,7 +94,7 @@ key := service.NormalizedCacheKey(normalizedFilters, page, limit)
 		}
 	}
 
-    profiles, total, err := h.repo.GetFiltered(r.Context(), normalizedFilters, page, limit)
+    profiles, total, err := h.srv.GetFilteredProfiles(r.Context(), normalizedFilters, page, limit)
     if err != nil {
         utils.RespondError(w, http.StatusInternalServerError, "Database error")
         return
@@ -120,7 +127,7 @@ func (h *ProfileHandler) CreateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := h.repo.GetByName(r.Context(), name)
+	existing, err := h.srv.GetProfileByName(r.Context(), name)
 	if err == nil && existing != nil {
         dataResponse := fromDomain(existing)
         utils.Respond(w, http.StatusOK, ProfileResponse{
@@ -137,7 +144,7 @@ func (h *ProfileHandler) CreateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.repo.Create(r.Context(), profile); err != nil {
+	if err := h.srv.CreateProfile(r.Context(), profile); err != nil {
 		slog.Error("failed to create profile", 
             "error", err, 
             "user_id", r.Context().Value("user_id"),
@@ -154,6 +161,7 @@ func (h *ProfileHandler) CreateProfile(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 	utils.Respond(w, http.StatusCreated, ProfileResponse{Status: "success", Data: &createdRes})
+	return
 }
 
 func (h *ProfileHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
@@ -165,7 +173,7 @@ func (h *ProfileHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	profile, err := h.repo.GetByID(r.Context(), id)
+	profile, err := h.srv.GetProfileByID(r.Context(), id)
 	if err != nil {
 		fmt.Println("GetProfile Error:", err)
 		utils.RespondError(w, http.StatusNotFound, "Profile not found")
@@ -269,7 +277,7 @@ key := service.NormalizedCacheKey(normalizedFilters, page, limit)
 		}
 	}
 
-		profiles, total, err := h.repo.GetFiltered(r.Context(), normalizedFilters, page, limit)
+		profiles, total, err := h.srv.ListProfiles(r.Context(), normalizedFilters, page, limit)
     if err != nil {
 			fmt.Println("GetFiltered Error:", err.Error())
         utils.RespondError(w, 500, "Database failure")
@@ -298,67 +306,48 @@ key := service.NormalizedCacheKey(normalizedFilters, page, limit)
 		utils.Respond(w, http.StatusOK, resp)
 }
 
-func fromDomain(p *domain.Profile) ProfileDTO {
-	return ProfileDTO{
-		ID:                 p.ID.String(),
-		Name:               p.Name,
-		Gender:             p.Gender,
-		GenderProbability:  p.GenderProbability,
-		SampleSize:         p.SampleSize,
-		Age:                p.Age,
-		AgeGroup:           p.AgeGroup,
-		CountryID:          p.CountryID,
-		CountryName:        p.CountryName,
-		CountryProbability: p.CountryProbability,
-		CreatedAt:           p.CreatedAt.Format(time.RFC3339),
+func (h *ProfileHandler) ImportProfiles(w http.ResponseWriter, r *http.Request) {
+	// Limit memory used for multipart parsing — stream the rest to disk
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		utils.RespondError(w, http.StatusBadRequest, "Failed to parse form")
+		return
 	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		utils.RespondError(w, http.StatusBadRequest, "Missing file field")
+		return
+	}
+	defer file.Close()
+
+	if header.Size > maxFileSize {
+		utils.RespondError(w, http.StatusRequestEntityTooLarge,
+			fmt.Sprintf("File exceeds maximum size of %dMB", maxFileSize>>20))
+		return
+	}
+
+	slog.Info("csv import started",
+		"filename", header.Filename,
+		"size_bytes", header.Size,
+	)
+
+	result := h.srv.ProcessCSV(r.Context(), file)
+	result.Status = "success"
+
+	// Invalidate list cache after bulk insert
+	if h.cache != nil && result.Inserted > 0 {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			h.cache.InvalidateListCache(ctx)
+		}()
+	}
+
+	slog.Info("csv import complete",
+		"total", result.TotalRows,
+		"inserted", result.Inserted,
+		"skipped", result.Skipped,
+	)
+
+	utils.Respond(w, http.StatusOK, result)
 }
-
-func mapToDTOs(profiles []domain.Profile) []ProfileDTO {
-	dtos := make([]ProfileDTO, len(profiles))
-	
-	for i, p := range profiles {
-		dtos[i] = fromDomain(&p)
-	}
-	
-	return dtos
-}
-
-func (h *ProfileHandler) parseFilters(r *http.Request) domain.ProfileFilters {
-	q := r.URL.Query()
-
-	filters := domain.ProfileFilters{
-		Gender:    strings.TrimSpace(q.Get("gender")),
-		CountryID: strings.TrimSpace(q.Get("country_id")),
-		AgeGroup:  strings.TrimSpace(q.Get("age_group")),
-		SortBy:    strings.TrimSpace(strings.ToLower(q.Get("sort_by"))),
-		Order:     strings.TrimSpace(strings.ToLower(q.Get("order"))),
-	}
-
-	if minAge, err := strconv.Atoi(q.Get("min_age")); err == nil {
-		filters.MinAge = &minAge
-	}
-	if maxAge, err := strconv.Atoi(q.Get("max_age")); err == nil {
-		filters.MaxAge = &maxAge
-	}
-
-	if minProb, err := strconv.ParseFloat(q.Get("min_gender_probability"), 64); err == nil {
-		filters.MinGenderProb = &minProb
-	}
-
-	page, err := strconv.Atoi(q.Get("page"))
-	if err != nil || page < 1 {
-		page = 1
-	}
-
-
-	limit, err := strconv.Atoi(q.Get("limit"))
-	if err != nil || limit < 1 {
-		limit = 10
-	} else if limit > 100 {
-		limit = 100
-	}
-
-	return filters
-}
-
